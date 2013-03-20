@@ -7,6 +7,7 @@ import scipy.optimize
 import matplotlib.pyplot as plt
 import copy
 
+
 #
 #   u    +----------+   y
 # ------>|    G     |-------->
@@ -29,7 +30,8 @@ class responsedata:
     @staticmethod
     def fromfile(filename):
         d = numpy.recfromcsv(filename)
-        return responsedata(d.t, d.u, d.y, filename + 'u-y')
+        name = filename.name if hasattr(filename, 'name') else filename
+        return responsedata(d.t, d.u, d.y, name + 'u-y')
 
     def __init__(self, t, u, y, name=None):
         # Some error checking for the unwary
@@ -195,38 +197,37 @@ def compare(data, sys, fft):
 
     # Responses
     plt.subplot(3, 1, 3)
+    plt.plot(data.t, data.u)
     for thing in [sys, fft, data]:
         plt.plot(*thing.response(data))
-    plt.legend(['Analytic', 'FFT', 'Data'], 'best')
+    plt.legend(['Input', 'Analytic', 'FFT', 'Data'], 'best')
 
 
 if __name__ == "__main__":
     # load data from csv file
-    data = numpy.recfromcsv(filename)[:5000]
+    import argparse
+    parser = argparse.ArgumentParser(description='Fit linear model to impulse data')
+    parser.add_argument('datafiles', nargs='+', type=argparse.FileType('r'),
+                        help='Filenames to use in fit. Must be CSVs with three columns with labels t, u and y.')
+    parser.add_argument('--num', default=[], nargs='+', type=float,
+                        help='Numerator time constants')
+    parser.add_argument('--den', default=[20], nargs='+', type=float,
+                        help='Denominator time constants')
+    parser.add_argument('--fit', default=False, action='store_true',
+                        help='Run fitting routine to improve fit')
+    parser.add_argument('--cutoff', default=1e-1, type=float,
+                        help='Frequency cutoff for fft')
+    args = parser.parse_args()
 
-    # Create step input
-    u = numpy.ones_like(data.t)
-    u[0] = 0
-    plt.figure()
-
-    rs = [responsedata(data.t, u, data.y1, 'u-y1'),
-          responsedata(data.t, u, data.y2, 'u-y2'),
-          responsedata(data.t, data.y1, data.y2, 'y1-y2'),
-          ]
-
-    Gs = [systemwithtimeconstants([4, 4, 180], [1430, 80, 80], 0.5),
-          systemwithtimeconstants([4, 180], [1430, 80, 80, 140], 0.5),
-          systemwithtimeconstants([4], [140], 1),
-          ]
-
-    ffts = [fft(rs[0], 0.1, 1.0/0.67, True),
-            fft(rs[1], 2e-2, 1.0/0.67, True),
-            fft(rs[2], 2e-2, 1.0/0.9, True),
-            ]
-
-    for r, G, fft in zip(rs, Gs, ffts):
+    for f in args.datafiles:
+        data = responsedata.fromfile(f)
+        G = systemwithtimeconstants(args.num, args.den)
+        thefft = fft(data, args.cutoff)
+        if args.fit:
+            thefitter = fitter(data, G)
+            thefitter.fit()
+            G = thefitter.G
         plt.figure()
-        compare(r, G, fft)
-        plt.savefig(r.name + '.pdf')
+        compare(data, G, thefft)
 
-    #plt.show()
+    plt.show()
