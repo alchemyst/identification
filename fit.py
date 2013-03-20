@@ -3,7 +3,9 @@
 import pandas
 import numpy
 import scipy.signal as sig
+import scipy.optimize
 import matplotlib.pyplot as plt
+import copy
 
 #
 #   u    +----------+   y
@@ -14,8 +16,6 @@ import matplotlib.pyplot as plt
 
 filename = 'heat_flux.csv'
 
-generate = False
-
 def timeconstants(taus):
     r = [1]
     for tau in taus:
@@ -23,9 +23,15 @@ def timeconstants(taus):
     return r
 
 class responsedata:
-    """ Container for the response data of a response experiment.
+    """ Container for the response data of an experiment.
     """
-    def __init__(self, t, u, y, name):
+
+    @staticmethod
+    def fromfile(filename):
+        d = numpy.recfromcsv(filename)
+        return responsedata(d.t, d.u, d.y, filename + 'u-y')
+
+    def __init__(self, t, u, y, name=None):
         # Some error checking for the unwary
         assert numpy.linalg.norm(numpy.diff(t, 2)) < 1e-9, "Sampling period must be constant"
 
@@ -35,15 +41,24 @@ class responsedata:
         self.t = t
         self.u = u
         self.y = y
-        self.name = name
+        if name is not None:
+            self.name = name
+        else:
+            self.name = "u-y"
         self.du = numpy.gradient(u)/self.T
         self.dy = numpy.gradient(y)/self.T
 
     def response(self, data):
         return self.t, self.y
 
+    def plotresponse(self):
+        plt.plot(self.t, self.u, self.t, self.y)
+        plt.legend(['u', 'y'])
+
 class systemwithtimeconstants:
-    def __init__(self, tau_num, tau_den, timeadjustment):
+    def __init__(self, tau_num, tau_den, timeadjustment=1):
+        self.tau_num = tau_num[:]
+        self.tau_den = tau_den[:]
         self.G = sig.lti(timeconstants(tau_num), timeconstants(tau_den))
         # obtain frequency response of transfer function
         self.w_tf, self.Gw_tf = sig.freqs(self.G.num, self.G.den)
@@ -61,6 +76,8 @@ class systemwithtimeconstants:
 
     def bodephase(self):
         plt.semilogx(self.w_tf, numpy.unwrap(numpy.angle(self.Gw_tf)))
+        plt.xlabel('Frequency (rad/sec)')
+        plt.ylabel('Phase')
         self.plotlines()
 
     def plotlines(self):
@@ -69,11 +86,43 @@ class systemwithtimeconstants:
         for z in -self.G.zeros:
             plt.axvline(z, color='g')
 
+    def __repr__(self):
+        return "systemwithtimeconstants(%s, %s)" % (self.tau_num, self.tau_den)
+
+
+class fitter:
+    def __init__(self, data, initialsystem):
+        self.data = data
+        self.G0 = initialsystem
+        self.G = copy.copy(self.G0)
+        self.calcresponse()
+
+    def error(self):
+        return numpy.linalg.norm(self.data.y - self.y)
+
+    def calcresponse(self):
+        self.t, self.y = self.G.response(self.data)
+
+    def gensystem(self, x):
+        N = len(self.G0.tau_num)
+
+        return systemwithtimeconstants(x[:N], x[N:])
+
+    def evalparameters(self, x):
+        self.G = self.gensystem(x)
+        self.calcresponse()
+
+        return self.error()
+
+    def fit(self):
+        x0 = self.G0.tau_num + self.G0.tau_den
+        xopt = scipy.optimize.fmin(self.evalparameters, x0)
+        self.G = self.gensystem(xopt)
 
 
 class fft:
     """ class for handling the frequency response based on FFT """
-    def __init__(self, data, w_cutoff, gainadjustment, deriv=False):
+    def __init__(self, data, w_cutoff, gainadjustment=1, deriv=False):
         self.data = data
         self.w_cutoff = w_cutoff
         self.gainadjustment = gainadjustment
@@ -146,17 +195,12 @@ def compare(data, sys, fft):
 
     # Responses
     plt.subplot(3, 1, 3)
-    for thing in [data, sys, fft]:
+    for thing in [sys, fft, data]:
         plt.plot(*thing.response(data))
-    plt.legend(['Data', 'Analytic', 'FFT'], 'best')
+    plt.legend(['Analytic', 'FFT', 'Data'], 'best')
 
 
 if __name__ == "__main__":
-    if generate:
-        # Write to csv
-        time = pandas.Series(t, name='t')
-        pandas.DataFrame({'u': u, 'y': y}, index=time).to_csv(filename)
-
     # load data from csv file
     data = numpy.recfromcsv(filename)[:5000]
 
