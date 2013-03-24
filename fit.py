@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import pandas
 import numpy
 import scipy.signal as sig
 import scipy.optimize
@@ -14,14 +13,12 @@ import copy
 #        +----------+
 #
 
-
-filename = 'heat_flux.csv'
-
 def timeconstants(taus):
     r = [1]
     for tau in taus:
         r = numpy.convolve(r, [tau, 1])
     return r
+
 
 class responsedata:
     """ Container for the response data of an experiment.
@@ -29,13 +26,16 @@ class responsedata:
 
     @staticmethod
     def fromfile(filename):
+        """ Factory method: Create a responsedata object from a filename or file object 
+        """
         d = numpy.recfromcsv(filename)
         name = filename.name if hasattr(filename, 'name') else filename
         return responsedata(d.t, d.u, d.y, name + 'u-y')
 
     def __init__(self, t, u, y, name=None):
         # Some error checking for the unwary
-        assert numpy.linalg.norm(numpy.diff(t, 2)) < 1e-9, "Sampling period must be constant"
+        assert numpy.linalg.norm(numpy.diff(t, 2)) < 1e-9, \
+               "Sampling period must be constant"
 
         # sampling period: first time step
         self.T = t[1]
@@ -47,8 +47,8 @@ class responsedata:
             self.name = name
         else:
             self.name = "u-y"
-        self.du = numpy.gradient(u)/self.T
-        self.dy = numpy.gradient(y)/self.T
+        self.du = numpy.gradient(u) / self.T
+        self.dy = numpy.gradient(y) / self.T
 
     def response(self, data):
         return self.t, self.y
@@ -56,6 +56,7 @@ class responsedata:
     def plotresponse(self):
         plt.plot(self.t, self.u, self.t, self.y)
         plt.legend(['u', 'y'])
+
 
 class systemwithtimeconstants:
     def __init__(self, tau_num, tau_den, timeadjustment=1):
@@ -125,6 +126,8 @@ class fitter:
 class fft:
     """ class for handling the frequency response based on FFT """
     def __init__(self, data, w_cutoff, gainadjustment=1, deriv=False):
+        """ Note this is not the optimal way to calculate an approximate transfer function frequency response """
+        
         self.data = data
         self.w_cutoff = w_cutoff
         self.gainadjustment = gainadjustment
@@ -153,7 +156,7 @@ class fft:
         self.Gw_useful = self.Gw[self.useful]
 
         # Filter out frequencies above the cutoff
-        self.Gw_filtered = self.Gw*(numpy.abs(self.w)<self.w_cutoff)
+        self.Gw_filtered = self.Gw*(numpy.abs(self.w) < self.w_cutoff)
 
         # Find system impulse response (time domain version of transfer function)
         self.impulse = numpy.real(numpy.fft.ifft(self.Gw_filtered))*self.gainadjustment
@@ -161,7 +164,6 @@ class fft:
     def response(self, data):
         # Find system response to input, taking only first bit
         return data.t, sig.convolve(data.u, self.impulse)[:data.t.size]
-
 
     def bodemag(self):
         plt.loglog(self.w_useful, numpy.abs(self.Gw_useful)*self.gainadjustment)
