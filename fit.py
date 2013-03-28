@@ -13,8 +13,8 @@ import copy
 #        +----------+
 #
 
-def timeconstants(taus):
-    r = [1]
+def timeconstants(taus, gain=1):
+    r = [gain]
     for tau in taus:
         r = numpy.convolve(r, [tau, 1])
     return r
@@ -59,10 +59,11 @@ class responsedata:
 
 
 class systemwithtimeconstants:
-    def __init__(self, tau_num, tau_den, timeadjustment=1):
+    def __init__(self, tau_num, tau_den, gain=1, timeadjustment=1):
         self.tau_num = tau_num[:]
         self.tau_den = tau_den[:]
-        self.G = sig.lti(timeconstants(tau_num), timeconstants(tau_den))
+        self.gain = gain
+        self.G = sig.lti(timeconstants(tau_num, gain), timeconstants(tau_den))
         # obtain frequency response of transfer function
         self.w_tf, self.Gw_tf = sig.freqs(self.G.num, self.G.den)
         self.timeadjustment = timeadjustment
@@ -90,7 +91,7 @@ class systemwithtimeconstants:
             plt.axvline(z, color='g')
 
     def __repr__(self):
-        return "systemwithtimeconstants(%s, %s)" % (self.tau_num, self.tau_den)
+        return "systemwithtimeconstants(%s, %s, gain=%s)" % (self.tau_num, self.tau_den, self.gain)
 
 
 class fitter:
@@ -109,7 +110,7 @@ class fitter:
     def gensystem(self, x):
         N = len(self.G0.tau_num)
 
-        return systemwithtimeconstants(x[:N], x[N:])
+        return systemwithtimeconstants(x[:N], x[N:-1], x[-1])
 
     def evalparameters(self, x):
         self.G = self.gensystem(x)
@@ -118,7 +119,7 @@ class fitter:
         return self.error()
 
     def fit(self):
-        x0 = self.G0.tau_num + self.G0.tau_den
+        x0 = self.G0.tau_num + self.G0.tau_den + [self.G0.gain]
         xopt = scipy.optimize.fmin(self.evalparameters, x0)
         self.G = self.gensystem(xopt)
 
