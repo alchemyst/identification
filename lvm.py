@@ -6,16 +6,19 @@ import sys
 import numpy
 
 class lvm:
-    def __init__(self, filename):
+    def __init__(self, f):
         """
         Read an LVM file as documented in http://www.ni.com/white-paper/4139/en
 
         Note: Special blocks are ignored.
         """
 
-        self.filename = filename
-
-        infile = open(filename)
+        if hasattr(f, 'next'):
+            self.filename = f.name
+            infile = f
+        else:
+            self.filename = f
+            infile = open(f)
 
         assert infile.next().startswith('LabVIEW Measurement'), "Invalid file"
 

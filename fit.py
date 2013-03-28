@@ -5,7 +5,7 @@ import scipy.signal as sig
 import scipy.optimize
 import matplotlib.pyplot as plt
 import copy
-
+import lvm
 
 #
 #   u    +----------+   y
@@ -199,11 +199,18 @@ def compare(data, sys, fft):
     plt.grid()
 
     # Responses
-    plt.subplot(3, 1, 3)
+    plt.subplot(3, 2, 5)
     plt.plot(data.t, data.u)
     for thing in [sys, fft, data]:
         plt.plot(*thing.response(data))
     plt.legend(['Input', 'Analytic', 'FFT', 'Data'], 'best')
+
+    plt.subplot(3, 2, 6)
+    plt.plot(data.t, scipy.integrate.cumtrapz(data.u, initial=0))
+    for thing in [sys, fft, data]:
+        t, y = thing.response(data)
+        plt.plot(t, scipy.integrate.cumtrapz(y, initial=0))
+    
 
 
 if __name__ == "__main__":
@@ -220,16 +227,34 @@ if __name__ == "__main__":
                         help='Run fitting routine to improve fit')
     parser.add_argument('--cutoff', default=1e-1, type=float,
                         help='Frequency cutoff for fft')
+    parser.add_argument('--starttime', default=0, nargs=1, type=int,
+                        help='Remove data before this time and re-stamp')
+    parser.add_argument('--endtime', default=numpy.Inf, nargs=1, type=int,
+                        help='Remove data after this time')
     args = parser.parse_args()
 
     for f in args.datafiles:
-        data = responsedata.fromfile(f)
+        if f.name.lower().endswith('csv'):
+            data = responsedata.fromfile(f)
+        elif f.name.lower().endswith('lvm'):
+            l = lvm.lvm(f)
+            data = responsedata(l.data.X_Value, l.data.Voltage_0, l.data.Voltage, name=f.name)
+            data.u -= data.u.min()
+            data.y -= data.y.min()
+
+        good = (data.t >= args.starttime) & (data.t <= args.endtime)
+        data.t -= args.starttime
+        data.t = data.t[good]
+        data.u = data.u[good]
+        data.y = data.y[good]
+
         G = systemwithtimeconstants(args.num, args.den)
         thefft = fft(data, args.cutoff)
         if args.fit:
             thefitter = fitter(data, G)
             thefitter.fit()
             G = thefitter.G
+            print G
         plt.figure()
         compare(data, G, thefft)
 
