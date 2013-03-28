@@ -210,7 +210,6 @@ def compare(data, sys, fft):
     for thing in [sys, fft, data]:
         t, y = thing.response(data)
         plt.plot(t, scipy.integrate.cumtrapz(y, initial=0))
-    
 
 
 if __name__ == "__main__":
@@ -231,6 +230,8 @@ if __name__ == "__main__":
                         help='Remove data before this time and re-stamp')
     parser.add_argument('--endtime', default=numpy.Inf, nargs=1, type=int,
                         help='Remove data after this time')
+    parser.add_argument('--selectgood', default=False, action='store_true',
+                        help='Select good data interactively')
     args = parser.parse_args()
 
     for f in args.datafiles:
@@ -241,6 +242,10 @@ if __name__ == "__main__":
             data = responsedata(l.data.X_Value, l.data.Voltage_0, l.data.Voltage, name=f.name)
             data.u -= data.u.min()
             data.y -= data.y.min()
+
+        if args.selectgood:
+            data.plotresponse()
+            ((args.starttime, _), (args.endtime, _)) = plt.ginput(2)
 
         good = (data.t >= args.starttime) & (data.t <= args.endtime)
         data.t -= args.starttime
@@ -255,7 +260,7 @@ if __name__ == "__main__":
             thefitter.fit()
             G = thefitter.G
             print G
-        plt.figure()
+
         compare(data, G, thefft)
 
     plt.show()
