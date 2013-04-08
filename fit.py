@@ -232,6 +232,8 @@ if __name__ == "__main__":
                         help='Remove data after this time')
     parser.add_argument('--selectgood', default=False, action='store_true',
                         help='Select good data interactively')
+    parser.add_argument('--save', default=False, action='store_true',
+                        help='Save results to .pdf')
     args = parser.parse_args()
 
     for f in args.datafiles:
@@ -246,6 +248,8 @@ if __name__ == "__main__":
         if args.selectgood:
             data.plotresponse()
             ((args.starttime, _), (args.endtime, _)) = plt.ginput(2)
+        
+        plt.figure()
 
         good = (data.t >= args.starttime) & (data.t <= args.endtime)
         data.t -= args.starttime
@@ -262,5 +266,8 @@ if __name__ == "__main__":
             print G
 
         compare(data, G, thefft)
+        if args.save:
+            plt.savefig(data.name + '.pdf')
 
-    plt.show()
+    if not args.save:
+        plt.show()
