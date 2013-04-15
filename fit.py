@@ -26,7 +26,7 @@ class responsedata:
 
     @staticmethod
     def fromfile(filename):
-        """ Factory method: Create a responsedata object from a filename or file object 
+        """ Factory method: Create a responsedata object from a filename or file object
         """
         d = numpy.recfromcsv(filename)
         name = filename.name if hasattr(filename, 'name') else filename
@@ -59,17 +59,20 @@ class responsedata:
 
 
 class systemwithtimeconstants:
-    def __init__(self, tau_num, tau_den, gain=1, timeadjustment=1):
+    def __init__(self, tau_num, tau_den, gain=1, timeadjustment=1, Dt=0):
         self.tau_num = tau_num[:]
         self.tau_den = tau_den[:]
         self.gain = gain
+        self.Dt = Dt
         self.G = sig.lti(timeconstants(tau_num, gain), timeconstants(tau_den))
         # obtain frequency response of transfer function
         self.w_tf, self.Gw_tf = sig.freqs(self.G.num, self.G.den)
+        self.Gw_tf *= numpy.exp(-self.w_tf*1j*self.Dt)
         self.timeadjustment = timeadjustment
 
     def response(self, data):
         Gt, Gy, _ = sig.lsim(self.G, data.u, data.t)
+        Gy = numpy.interp(Gt - self.Dt, Gt, Gy)
         return Gt*self.timeadjustment, Gy
 
     def bodemag(self):
@@ -91,7 +94,7 @@ class systemwithtimeconstants:
             plt.axvline(z, color='g')
 
     def __repr__(self):
-        return "systemwithtimeconstants(%s, %s, gain=%s)" % (self.tau_num, self.tau_den, self.gain)
+        return "systemwithtimeconstants(%s, %s, gain=%s, Dt=%s)" % (self.tau_num, self.tau_den, self.gain, self.Dt)
 
 
 class fitter:
@@ -110,7 +113,10 @@ class fitter:
     def gensystem(self, x):
         N = len(self.G0.tau_num)
 
-        return systemwithtimeconstants(x[:N], x[N:-1], x[-1])
+        return systemwithtimeconstants(tau_num=x[:N],
+                                       tau_den=x[N:-2],
+                                       gain=x[-2],
+                                       Dt=x[-1])
 
     def evalparameters(self, x):
         self.G = self.gensystem(x)
@@ -119,7 +125,7 @@ class fitter:
         return self.error()
 
     def fit(self):
-        x0 = self.G0.tau_num + self.G0.tau_den + [self.G0.gain]
+        x0 = self.G0.tau_num + self.G0.tau_den + [self.G0.gain, self.G0.Dt]
         xopt = scipy.optimize.fmin(self.evalparameters, x0)
         self.G = self.gensystem(xopt)
 
@@ -128,7 +134,7 @@ class fft:
     """ class for handling the frequency response based on FFT """
     def __init__(self, data, w_cutoff, gainadjustment=1, deriv=False):
         """ Note this is not the optimal way to calculate an approximate transfer function frequency response """
-        
+
         self.data = data
         self.w_cutoff = w_cutoff
         self.gainadjustment = gainadjustment
@@ -222,6 +228,8 @@ if __name__ == "__main__":
                         help='Numerator time constants')
     parser.add_argument('--den', default=[20], nargs='+', type=float,
                         help='Denominator time constants')
+    parser.add_argument('--dt', default=0, nargs=1, type=float,
+                        help='Dead time')
     parser.add_argument('--fit', default=False, action='store_true',
                         help='Run fitting routine to improve fit')
     parser.add_argument('--cutoff', default=1e-1, type=float,
@@ -248,7 +256,7 @@ if __name__ == "__main__":
         if args.selectgood:
             data.plotresponse()
             ((args.starttime, _), (args.endtime, _)) = plt.ginput(2)
-        
+
         plt.figure()
 
         good = (data.t >= args.starttime) & (data.t <= args.endtime)
@@ -256,14 +264,15 @@ if __name__ == "__main__":
         data.t = data.t[good]
         data.u = data.u[good]
         data.y = data.y[good]
-
-        G = systemwithtimeconstants(args.num, args.den)
+                
+        G = systemwithtimeconstants(args.num, args.den, Dt=args.dt[0])
         thefft = fft(data, args.cutoff)
         if args.fit:
             thefitter = fitter(data, G)
             thefitter.fit()
             G = thefitter.G
-            print G
+        
+        print G
 
         compare(data, G, thefft)
         if args.save:
