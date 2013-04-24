@@ -3,6 +3,7 @@
 import numpy
 import scipy.signal as sig
 import scipy.optimize
+import scipy.integrate
 import matplotlib.pyplot as plt
 import copy
 import lvm
@@ -12,6 +13,19 @@ import lvm
 # ------>|    G     |-------->
 #        +----------+
 #
+
+def cumtrapz(sig, initialvalue=None):
+    if initialvalue:
+        try:
+            return scipy.integrate.cumtrapz(sig, initialvalue=initialvalue)
+        except TypeError:
+            pass
+        integral = numpy.empty_like(sig)
+        integral[0] = initialvalue
+        integral[1:] = scipy.integrate.cumtrapz(sig)
+        return integral
+    else:
+        return scipy.integrate.cumtraps(sig)
 
 def timeconstants(taus, gain=1):
     r = [gain]
@@ -59,7 +73,7 @@ class responsedata:
 
 
 class systemwithtimeconstants:
-    def __init__(self, tau_num, tau_den, gain=1, timeadjustment=1, Dt=0):
+    def __init__(self, tau_num, tau_den, gain=1, Dt=0):
         self.tau_num = tau_num[:]
         self.tau_den = tau_den[:]
         self.gain = gain
@@ -68,12 +82,11 @@ class systemwithtimeconstants:
         # obtain frequency response of transfer function
         self.w_tf, self.Gw_tf = sig.freqs(self.G.num, self.G.den)
         self.Gw_tf *= numpy.exp(-self.w_tf*1j*self.Dt)
-        self.timeadjustment = timeadjustment
 
     def response(self, data):
         Gt, Gy, _ = sig.lsim(self.G, data.u, data.t)
         Gy = numpy.interp(Gt - self.Dt, Gt, Gy)
-        return Gt*self.timeadjustment, Gy
+        return Gt, Gy
 
     def bodemag(self):
         plt.loglog(self.w_tf, numpy.abs(self.Gw_tf))
@@ -132,12 +145,11 @@ class fitter:
 
 class fft:
     """ class for handling the frequency response based on FFT """
-    def __init__(self, data, w_cutoff, gainadjustment=1, deriv=False):
+    def __init__(self, data, w_cutoff, deriv=False):
         """ Note this is not the optimal way to calculate an approximate transfer function frequency response """
 
         self.data = data
         self.w_cutoff = w_cutoff
-        self.gainadjustment = gainadjustment
         self.deriv = deriv
         self.calc()
 
@@ -166,14 +178,14 @@ class fft:
         self.Gw_filtered = self.Gw*(numpy.abs(self.w) < self.w_cutoff)
 
         # Find system impulse response (time domain version of transfer function)
-        self.impulse = numpy.real(numpy.fft.ifft(self.Gw_filtered))*self.gainadjustment
+        self.impulse = numpy.real(numpy.fft.ifft(self.Gw_filtered))
 
     def response(self, data):
         # Find system response to input, taking only first bit
         return data.t, sig.convolve(data.u, self.impulse)[:data.t.size]
 
     def bodemag(self):
-        plt.loglog(self.w_useful, numpy.abs(self.Gw_useful)*self.gainadjustment)
+        plt.loglog(self.w_useful, numpy.abs(self.Gw_useful))
         plt.xlabel('Frequency (rad/sec)')
         plt.ylabel('Magnitude')
         self.plotlines()
@@ -212,10 +224,10 @@ def compare(data, sys, fft):
     plt.legend(['Input', 'Analytic', 'FFT', 'Data'], 'best')
 
     plt.subplot(3, 2, 6)
-    plt.plot(data.t, scipy.integrate.cumtrapz(data.u, initial=0))
+    plt.plot(data.t, cumtrapz(data.u, initial=0))
     for thing in [sys, fft, data]:
         t, y = thing.response(data)
-        plt.plot(t, scipy.integrate.cumtrapz(y, initial=0))
+        plt.plot(t, cumtrapz(y, initial=0))
 
 
 if __name__ == "__main__":
@@ -228,9 +240,9 @@ if __name__ == "__main__":
                         help='Numerator time constants')
     parser.add_argument('--den', default=[20], nargs='+', type=float,
                         help='Denominator time constants')
-    parser.add_argument('--dt', default=0, nargs=1, type=float,
+    parser.add_argument('--dt', default=0, type=float,
                         help='Dead time')
-    parser.add_argument('--fit', default=False, action='store_true',
+    parseradd_argument('--fit', default=False, action='store_true',
                         help='Run fitting routine to improve fit')
     parser.add_argument('--cutoff', default=1e-1, type=float,
                         help='Frequency cutoff for fft')
@@ -242,6 +254,8 @@ if __name__ == "__main__":
                         help='Select good data interactively')
     parser.add_argument('--save', default=False, action='store_true',
                         help='Save results to .pdf')
+    parser.add_argument('--resample', default=[1], type=int,
+                        help='Resample data ')
     args = parser.parse_args()
 
     for f in args.datafiles:
@@ -264,14 +278,14 @@ if __name__ == "__main__":
         data.t = data.t[good]
         data.u = data.u[good]
         data.y = data.y[good]
-                
-        G = systemwithtimeconstants(args.num, args.den, Dt=args.dt[0])
+
+        G = systemwithtimeconstants(args.num, args.den, Dt=args.dt)
         thefft = fft(data, args.cutoff)
         if args.fit:
             thefitter = fitter(data, G)
             thefitter.fit()
             G = thefitter.G
-        
+
         print G
 
         compare(data, G, thefft)
