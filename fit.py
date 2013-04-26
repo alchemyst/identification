@@ -15,7 +15,7 @@ import lvm
 #
 
 def cumtrapz(sig, initialvalue=None):
-    if initialvalue:
+    if initialvalue is not None:
         try:
             return scipy.integrate.cumtrapz(sig, initialvalue=initialvalue)
         except TypeError:
@@ -25,7 +25,7 @@ def cumtrapz(sig, initialvalue=None):
         integral[1:] = scipy.integrate.cumtrapz(sig)
         return integral
     else:
-        return scipy.integrate.cumtraps(sig)
+        return scipy.integrate.cumtrapz(sig)
 
 def timeconstants(taus, gain=1):
     r = [gain]
@@ -223,11 +223,12 @@ def compare(data, sys, fft):
         plt.plot(*thing.response(data))
     plt.legend(['Input', 'Analytic', 'FFT', 'Data'], 'best')
 
+    # Integrals of responses
     plt.subplot(3, 2, 6)
-    plt.plot(data.t, cumtrapz(data.u, initial=0))
+    plt.plot(data.t, cumtrapz(data.u, initialvalue=0))
     for thing in [sys, fft, data]:
         t, y = thing.response(data)
-        plt.plot(t, cumtrapz(y, initial=0))
+        plt.plot(t, cumtrapz(y, initialvalue=0))
 
 
 if __name__ == "__main__":
@@ -242,7 +243,7 @@ if __name__ == "__main__":
                         help='Denominator time constants')
     parser.add_argument('--dt', default=0, type=float,
                         help='Dead time')
-    parseradd_argument('--fit', default=False, action='store_true',
+    parser.add_argument('--fit', default=False, action='store_true',
                         help='Run fitting routine to improve fit')
     parser.add_argument('--cutoff', default=1e-1, type=float,
                         help='Frequency cutoff for fft')
@@ -263,7 +264,8 @@ if __name__ == "__main__":
             data = responsedata.fromfile(f)
         elif f.name.lower().endswith('lvm'):
             l = lvm.lvm(f)
-            data = responsedata(l.data.X_Value, l.data.Voltage_0, l.data.Voltage, name=f.name)
+            data = responsedata(l.data.X_Value, l.data.Voltage_0,
+                                l.data.Voltage, name=f.name)
             data.u -= data.u.min()
             data.y -= data.y.min()
 
