@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import copy
 import lvm
 
+# Nomenclature:
 #
 #   u    +----------+   y
 # ------>|    G     |-------->
@@ -39,30 +40,41 @@ class responsedata:
     """
 
     @staticmethod
-    def fromfile(filename):
+    def fromfile(filename, stride=1):
         """ Factory method: Create a responsedata object from a filename or file object
         """
         d = numpy.recfromcsv(filename)
         name = filename.name if hasattr(filename, 'name') else filename
-        return responsedata(d.t, d.u, d.y, name + 'u-y')
+        return responsedata(d.t, d.u, d.y, name + 'u-y', stride=1)
 
-    def __init__(self, t, u, y, name=None):
+    def __init__(self, t, u, y, name=None, stride=1):
         # Some error checking for the unwary
         assert numpy.linalg.norm(numpy.diff(t, 2)) < 1e-9, \
                "Sampling period must be constant"
+        assert t.size == u.size and t.size == y.size, \
+               "Input vectors must all be the same size"
 
         # sampling period: first time step
-        self.T = t[1]
+        self.T = t[stride]
 
-        self.t = t
-        self.u = u
-        self.y = y
+        self.t = t[::stride]
+        self.u = u[::stride]
+        self.y = y[::stride]
+
         if name is not None:
             self.name = name
         else:
             self.name = "u-y"
         self.du = numpy.gradient(u) / self.T
         self.dy = numpy.gradient(y) / self.T
+
+
+    def resampled(self, stride=1):
+        """ return a new object with data resampled at a particular stride
+        Note that no interpolation is done.
+        """
+
+        return responsedata(self.t, self.u, self.y, name=self.name + '_resampled', stride=stride)
 
     def response(self, data):
         return self.t, self.y
@@ -112,6 +124,8 @@ class systemwithtimeconstants:
 
 class fitter:
     def __init__(self, data, initialsystem):
+        """ Build a fitting problem, supplying data and an initial system guess.
+        """
         self.data = data
         self.G0 = initialsystem
         self.G = copy.copy(self.G0)
@@ -255,8 +269,8 @@ if __name__ == "__main__":
                         help='Select good data interactively')
     parser.add_argument('--save', default=False, action='store_true',
                         help='Save results to .pdf')
-    parser.add_argument('--resample', default=[1], type=int,
-                        help='Resample data ')
+    parser.add_argument('--stride', default=1, type=int,
+                        help='Resample data using this stride')
     args = parser.parse_args()
 
     for f in args.datafiles:
@@ -265,7 +279,7 @@ if __name__ == "__main__":
         elif f.name.lower().endswith('lvm'):
             l = lvm.lvm(f)
             data = responsedata(l.data.X_Value, l.data.Voltage_0,
-                                l.data.Voltage, name=f.name)
+                                l.data.Voltage, name=f.name, stride=args.stride)
             data.u -= data.u.min()
             data.y -= data.y.min()
 
