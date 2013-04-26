@@ -296,6 +296,7 @@ if __name__ == "__main__":
         data.y = data.y[good]
 
         G = systemwithtimeconstants(args.num, args.den, Dt=args.dt)
+
         thefft = fft(data, args.cutoff)
         if args.fit:
             thefitter = fitter(data, G)
