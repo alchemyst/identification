@@ -84,7 +84,8 @@ class testFitter(unittest.TestCase):
         self.assertNotAlmostEqual(fitter.error(), 0)
 
         # Test that we can evaluate with the right parameters
-        self.assertAlmostEqual(fitter.evalparameters([1]), 0)
+        correctfitter = fit.fitter(r, G)
+        self.assertAlmostEqual(fitter.evalparameters(correctfitter.genparameters()), 0)
 
 
 if __name__ == "__main__":

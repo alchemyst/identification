@@ -7,6 +7,8 @@ import scipy.integrate
 import matplotlib.pyplot as plt
 import copy
 import lvm
+import csv
+import os.path
 
 # Nomenclature:
 #
@@ -14,6 +16,7 @@ import lvm
 # ------>|    G     |-------->
 #        +----------+
 #
+
 
 def cumtrapz(sig, initialvalue=None):
     if initialvalue is not None:
@@ -28,6 +31,7 @@ def cumtrapz(sig, initialvalue=None):
     else:
         return scipy.integrate.cumtrapz(sig)
 
+
 def timeconstants(taus, gain=1):
     r = [gain]
     for tau in taus:
@@ -41,7 +45,7 @@ class responsedata:
 
     @staticmethod
     def fromfile(filename, stride=1):
-        """ Factory method: Create a responsedata object from a filename or file object
+        """ Create a responsedata object from a filename or file object
         """
         d = numpy.recfromcsv(filename)
         name = filename.name if hasattr(filename, 'name') else filename
@@ -68,13 +72,13 @@ class responsedata:
         self.du = numpy.gradient(u) / self.T
         self.dy = numpy.gradient(y) / self.T
 
-
     def resampled(self, stride=1):
         """ return a new object with data resampled at a particular stride
         Note that no interpolation is done.
         """
 
-        return responsedata(self.t, self.u, self.y, name=self.name + '_resampled', stride=stride)
+        return responsedata(self.t, self.u, self.y,
+                            name=self.name + '_resampled', stride=stride)
 
     def response(self, data):
         return self.t, self.y
@@ -144,6 +148,9 @@ class fitter:
                                        tau_den=x[N:-2],
                                        gain=x[-2],
                                        Dt=x[-1])
+
+    def genparameters(self):
+        return self.G.tau_num + self.G.tau_den + [self.G.gain, self.G.Dt]
 
     def evalparameters(self, x):
         self.G = self.gensystem(x)
@@ -271,9 +278,37 @@ if __name__ == "__main__":
                         help='Save results to .pdf')
     parser.add_argument('--stride', default=1, type=int,
                         help='Resample data using this stride')
+    parser.add_argument('--experimentfile', type=argparse.FileType('rw'),
+                        help='Read information from CSV file')
     args = parser.parse_args()
 
+    if args.experimentfile:
+        experiments = {}
+        experimentreader = csv.DictReader(args.experimentfile)
+        for experiment in experimentreader:
+            experiments[experiment['Filename']] = experiment
+        outfile = csv.DictWriter(open(args.experimentfile.name + "out.csv", 'w'),
+                                 experimentreader.fieldnames)
+        outfile.writeheader()
+
     for f in args.datafiles:
+        # TODO: Replace this output with logging
+        print f.name 
+        b = os.path.basename(f.name)
+        if b in experiments:
+            experiment = experiments[b]
+            args.stride=int(experiment['Stride'])
+            
+            if experiment['Start time']:
+                args.starttime = float(experiment['Start time'])
+            if experiment['End time']:
+                args.endtime = float(experiment['End time'])
+            if not experiment['Gain']:
+                args.fit = True
+        else:
+            experiment = dict((field, '') for field in experimentreader.fieldnames)
+            experiment['Filename'] = b
+
         if f.name.lower().endswith('csv'):
             data = responsedata.fromfile(f)
         elif f.name.lower().endswith('lvm'):
@@ -302,12 +337,19 @@ if __name__ == "__main__":
             thefitter = fitter(data, G)
             thefitter.fit()
             G = thefitter.G
+            if args.experimentfile:
+                experiment['Gain'] = G.gain
+                experiment['Deadtime'] = G.Dt
+                experiment['Tau'] = G.tau_den[0]
 
         print G
 
         compare(data, G, thefft)
         if args.save:
             plt.savefig(data.name + '.pdf')
+
+        if args.experimentfile:
+            outfile.writerow(experiment)
 
     if not args.save:
         plt.show()
