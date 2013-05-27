@@ -251,7 +251,23 @@ def compare(data, sys, fft):
         t, y = thing.response(data)
         plt.plot(t, cumtrapz(y, initialvalue=0))
 
+class db(object):
+    def __init__(self, filename, keyfield):
+        self.index = {}
+        itemreader = csv.DictReader(open(filename))
+        for item in itemreader:
+            self.index[item[keyfield]] = item
+        
 
+class experimentdb(db):
+    def __init__(self, filename):
+        super(experimentdb, self).__init__(filename, 'Filename')
+        self.experiments = self.index
+
+class materialdb(db):
+    def __init__(self, filename):
+        super(materialdb, self).__init__(filename, 'Material')
+        
 if __name__ == "__main__":
     # load data from csv file
     import argparse
@@ -283,10 +299,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.experimentfile:
-        experiments = {}
-        experimentreader = csv.DictReader(args.experimentfile)
-        for experiment in experimentreader:
-            experiments[experiment['Filename']] = experiment
+        db = experimentdb(args.experimentfile)
         outfile = csv.DictWriter(open(args.experimentfile.name + "out.csv", 'w'),
                                  experimentreader.fieldnames)
         outfile.writeheader()
@@ -296,7 +309,7 @@ if __name__ == "__main__":
         print f.name 
         b = os.path.basename(f.name)
         if b in experiments:
-            experiment = experiments[b]
+            experiment = db.experiments[b]
             args.stride=int(experiment['Stride'])
             
             if experiment['Start time']:
