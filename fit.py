@@ -39,6 +39,10 @@ def timeconstants(taus, gain=1):
     return r
 
 
+def normalize(signal):
+    return signal - numpy.mean(signal[:10])
+
+
 class responsedata:
     """ Container for the response data of an experiment.
     """
@@ -51,6 +55,16 @@ class responsedata:
         name = filename.name if hasattr(filename, 'name') else filename
         return responsedata(d.t, d.u, d.y, name + 'u-y', stride=1)
 
+    @staticmethod
+    def fromlvm(filename, stride=1):
+        """ Create a responsedata object from an LVM file """
+        import lvm
+        d = lvm.lvm(filename)
+        return responsedata(d.data.X_Value, d.data.Voltage_0,
+                            d.data.Voltage, name=filename,
+                            stride=stride)
+
+
     def __init__(self, t, u, y, name=None, stride=1):
         # Some error checking for the unwary
         assert numpy.linalg.norm(numpy.diff(t, 2)) < 1e-9, \
@@ -62,8 +76,8 @@ class responsedata:
         self.T = t[stride]
 
         self.t = t[::stride]
-        self.u = u[::stride]
-        self.y = y[::stride]
+        self.u = normalize(u[::stride])
+        self.y = normalize(y[::stride])
 
         if name is not None:
             self.name = name
@@ -71,6 +85,8 @@ class responsedata:
             self.name = "u-y"
         self.du = numpy.gradient(u) / self.T
         self.dy = numpy.gradient(y) / self.T
+        self.inputarea = numpy.trapz(self.u, self.t)
+        self.outputarea = numpy.trapz(self.y, self.t)
 
     def resampled(self, stride=1):
         """ return a new object with data resampled at a particular stride
