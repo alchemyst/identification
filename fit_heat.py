@@ -23,20 +23,21 @@ def fluxkernel(L, alpha, fluxmag, t, Nterms=1000):
     return result*fluxmag
 
 
-def predictedresponse(response, L, alpha, Nterms=1000):
+def predictedresponse(response, L, alpha, gain=1, Nterms=1000):
     kernel = fluxkernel(L, alpha, 1., response.t, Nterms)
     predictedy = convolve(response.u, -kernel)[:response.t.size]
     kernelarea = trapz(predictedy, response.t)
 
-    return predictedy/kernelarea*response.outputarea, kernelarea
+    return predictedy*gain, kernelarea*gain
 
 
-def fiterror(alpha, L, response, startindex=None, endindex=None):
+def fiterror(x, L, response, startindex=None, endindex=None):
+    alpha, gain = x
     if startindex is None:
         startindex = 0
     if endindex is None:
         endindex = len(response.t)+1
-    predictedy, kernelarea = predictedresponse(response, L, alpha)
+    predictedy, kernelarea = predictedresponse(response, L, alpha, gain)
     deviation = response.y - predictedy
     return linalg.norm(deviation[startindex:endindex])
 
@@ -54,28 +55,33 @@ if __name__=="__main__":
         print f
         L = float(experiment['Length/mm'])
         alpha0 = float(materials.index[experiment['Material']]['Alpha'])*1e6
-        predictedy0, kernelarea0 = predictedresponse(r, L, alpha0)
-        print "Material alpha:", alpha0
-        #fitresult = scipy.optimize.minimize_scalar(fiterror, bounds=[alpha0/10., alpha0], args=(L, r), method="golden")
-        # alpha = scipy.optimize.golden(fiterror, brack=(alpha0/20., alpha0/10, alpha0), args=(L, r))
-        startindex = 0
-        cutoff = 0.5
-        endindex = max(nonzero(r.y > cutoff*max(r.y))[0])
-        alpha = scipy.optimize.fminbound(fiterror, alpha0/30., alpha0/2.,
-                                         args=(L, r, startindex, endindex))
 
-        #alpha = fitresult.x
-        #alpha = alpha0/20
-        print "Fitted alpha:", alpha
-        predictedy, kernelarea = predictedresponse(r, L, alpha)
-        plt.plot(r.t, r.y,
-                 r.t, predictedy0,
-                 r.t, predictedy)
-        plt.axvline(r.t[endindex])
-        plt.axhline(cutoff*max(r.y), alpha=0.3)
-        plt.legend(['Experimental',
-                    alphalabel(alpha0),
-                    alphalabel(alpha)], loc='best')
+        print "Material alpha:", alpha0
+
+        startindex = 0
+        cutoff = 0.95
+        endindex = max(nonzero(r.y > cutoff*max(r.y))[0])
+
+        x0 = [alpha0/2., 0.1]
+        
+        # Do the fits - we can easily add other data ranges here.        
+        fits  = [['Full dataset', 0, len(r.t), 'blue',
+                  scipy.optimize.minimize(fiterror, x0, args=(L, r))],
+                 ['Leading edge', startindex, endindex, 'red', 
+                  scipy.optimize.minimize(fiterror, x0, args=(L, r, startindex, endindex))],
+                 ]
+        
+        for name, startindex, endindex, color, result in fits:
+            alpha, gain = result.x
+            print name
+            print "Fitted alpha:", alpha
+            print "Fitted gain:", gain
+
+            predictedy, kernelarea = predictedresponse(r, L, alpha, gain=gain)
+            plt.plot(r.t[startindex:endindex], r.y[startindex:endindex], color=color, alpha=0.3, label=name)
+            plt.plot(r.t, predictedy, color=color, label=alphalabel(alpha))
+
+        plt.legend(loc='best')
         plt.title(r.name)
-        plt.savefig(f + '_heatkernel.pdf')
+        plt.savefig(f + '_heatkernel.png')
         plt.cla()

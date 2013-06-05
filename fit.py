@@ -40,7 +40,7 @@ def timeconstants(taus, gain=1):
 
 
 def normalize(signal):
-    return signal - numpy.mean(signal[:10])
+    return signal - numpy.mean(signal[:2])
 
 
 class responsedata:
@@ -60,7 +60,7 @@ class responsedata:
         """ Create a responsedata object from an LVM file """
         import lvm
         d = lvm.lvm(filename)
-        return responsedata(d.data.X_Value, d.data.Voltage_0,
+        return responsedata(d.data.X_Value - d.data.X_Value[0], d.data.Voltage_0,
                             d.data.Voltage, name=filename,
                             stride=stride)
 
