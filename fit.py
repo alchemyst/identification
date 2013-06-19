@@ -59,9 +59,14 @@ class responsedata:
     def fromlvm(filename, stride=1):
         """ Create a responsedata object from an LVM file """
         import lvm
+        
+        influxgain = 5.0e5
+        outfluxgain = 5.0e5
+        
         d = lvm.lvm(filename)
-        return responsedata(d.data.X_Value - d.data.X_Value[0], d.data.Voltage_0,
-                            d.data.Voltage, name=filename,
+        return responsedata(d.data.X_Value - d.data.X_Value[0], 
+                            d.data.Voltage_0*influxgain,
+                            d.data.Voltage*outfluxgain, name=filename,
                             stride=stride)
 
 
@@ -270,8 +275,12 @@ def compare(data, sys, fft):
 class db(object):
     def __init__(self, filename, keyfield):
         self.index = {}
-        itemreader = csv.DictReader(open(filename))
-        for item in itemreader:
+        if hasattr(filename, 'name'):
+            f = filename
+        else:
+            f = open(filename)
+        self.itemreader = csv.DictReader(f)
+        for item in self.itemreader:
             self.index[item[keyfield]] = item
         
 
@@ -317,14 +326,14 @@ if __name__ == "__main__":
     if args.experimentfile:
         db = experimentdb(args.experimentfile)
         outfile = csv.DictWriter(open(args.experimentfile.name + "out.csv", 'w'),
-                                 experimentreader.fieldnames)
+                                 db.itemreader.fieldnames)
         outfile.writeheader()
 
     for f in args.datafiles:
         # TODO: Replace this output with logging
         print f.name 
         b = os.path.basename(f.name)
-        if b in experiments:
+        if b in db.experiments:
             experiment = db.experiments[b]
             args.stride=int(experiment['Stride'])
             
