@@ -73,34 +73,33 @@ class analytic_convec(heatmodel):
 
     def __init__(self, response, experiment, material, h, cutter=alldata):
         super(analytic_convec, self).__init__(response, experiment, material, cutter=cutter)
-        self.startparameters = [float(material['alpha'])/3, h, 0.1]
+        self.startparameters = [float(material['alpha'])/2, h, 0.1]
         self.k = float(material['k'])
 
     def fluxkernel(self, parameters):
-        Nterms = 100
+        Nterms = 1000
         alpha, h, gain = parameters
         k = self.k
         L = self.L
         t = self.response.t
 
         def lambda_eq(lam):
-            return lam*k/h*tan(lam*L) - 1
+            return sin(lam*L) - h/k*cos(lam*L)/lam
 
         result = zeros_like(t)
-        lambda_n = -pi/L/2.0
 
         print alpha, h, gain, k, L
-
+        
+        lambda_n = -pi/L/2.
         for i in range(1, Nterms):
-            lambda_n = scipy.optimize.newton(lambda_eq, lambda_n+pi/L*0.99)
-            if not ( (i-1)*pi/L <= lambda_n <= i*pi/L ):
-                print i, lambda_n
+            lambda_n = scipy.optimize.bisect(lambda_eq, lambda_n+pi/L/2., lambda_n+pi/L)
+            assert ( (i-1)*pi/L <= lambda_n <= i*pi/L ), 'Lambda out of sequence'
 
-            An = -4*((L**2*h*lambda_n - (h - k)*L*lambda_n)*sin(L*lambda_n) - h*cos(L*lambda_n) + h)/(2*L*h*lambda_n**2 + h*lambda_n*sin(2*L*lambda_n))
+            An = -4*((L**2*lambda_n - (1 - k/h)*L*lambda_n)*sin(L*lambda_n) - cos(L*lambda_n) + 1)/(2*L*lambda_n**2 + lambda_n*sin(2*L*lambda_n))
             result += where(t==0, 0, 
                             An*alpha*lambda_n**3*exp(-alpha*lambda_n**2*t)*sin(lambda_n*L))
 
-        return result
+        return result*gain
 
     def label(self):
         return r'Convective $\alpha=%3.2f$ mm$^2$/s, $h=%3.2f$ W/(m2.K)'  % (self.parameters[0]*1e6, self.parameters[1])
