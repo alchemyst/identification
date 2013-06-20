@@ -26,15 +26,16 @@ class heatmodel(object):
         self.response = response
         self.cutname, self.startindex, self.endindex = cutter(response)
         self.L = float(experiment['Length/mm'])*1e-3
+        self.k = float(material['k'])
 
     def predictedresponse(self, parameters=None):
         if parameters is None: parameters = self.parameters
 
         kernel = self.fluxkernel(parameters)
-        return convolve(self.response.u, -kernel)[:self.response.t.size]
+        return convolve(-self.response.u/self.k, kernel)[:self.response.t.size]
 
     def fiterror(self, parameters):
-        predictedy, kernelarea = self.predictedresponse(parameters)
+        predictedy = self.predictedresponse(parameters)
         deviation = self.response.y - predictedy
         return linalg.norm(deviation[self.startindex:self.endindex])
 
@@ -46,7 +47,7 @@ class analytic_zero(heatmodel):
     """ Analytic flux kernel - zero boundary conditions"""
     def __init__(self, response, experiment, material, cutter=alldata):
         super(analytic_zero, self).__init__(response, experiment, material, cutter=cutter)
-        self.startparameters = [float(material['alpha'])/2, 0.1]
+        self.startparameters = [float(material['alpha']), 1]
 
     def fluxkernel(self, parameters):
         Nterms = 100
@@ -59,21 +60,21 @@ class analytic_zero(heatmodel):
         sgn = 1
         for n in range(1, Nterms):
             lambda_n = (2*n-1)*pi/(2*L)
-            An = -(2./L)/lambda_n**2
+            #An = -(2./L)/lambda_n**2
             result -= where(t==0, 0,
-                            2*alpha*lambda_n*exp(-alpha*lambda_n**2*t)*sgn/L)
+                            2*alpha**2*lambda_n*exp(-alpha*lambda_n**2*t)*sgn/L)
             sgn *= -1
         return result*gain
 
     def label(self):
-        return r'$u(L, t)=0$, $\alpha=%3.2f$ mm$^2$/s' % (self.parameters[0]*1e6)
+        return r'$u(L, t)=0$, $\alpha=%3.1f$ mm$^2$/s' % (self.parameters[0]*1e6)
 
 
 class analytic_convec(heatmodel):
 
     def __init__(self, response, experiment, material, h, cutter=alldata):
         super(analytic_convec, self).__init__(response, experiment, material, cutter=cutter)
-        self.startparameters = [float(material['alpha'])/2, h, 0.1]
+        self.startparameters = [float(material['alpha']), h, 1]
         self.k = float(material['k'])
 
     def fluxkernel(self, parameters):
@@ -88,21 +89,22 @@ class analytic_convec(heatmodel):
 
         result = zeros_like(t)
 
-        print alpha, h, gain, k, L
-        
-        lambda_n = -pi/L/2.
-        for i in range(1, Nterms):
-            lambda_n = scipy.optimize.bisect(lambda_eq, lambda_n+pi/L/2., lambda_n+pi/L)
-            assert ( (i-1)*pi/L <= lambda_n <= i*pi/L ), 'Lambda out of sequence'
+        leftlim = 0
+        rightlim = pi/L/2.
 
-            An = -4*((L**2*lambda_n - (1 - k/h)*L*lambda_n)*sin(L*lambda_n) - cos(L*lambda_n) + 1)/(2*L*lambda_n**2 + lambda_n*sin(2*L*lambda_n))
-            result += where(t==0, 0, 
-                            An*alpha*lambda_n**3*exp(-alpha*lambda_n**2*t)*sin(lambda_n*L))
+        for i in range(1, Nterms):
+            lambda_n = scipy.optimize.ridder(lambda_eq, leftlim, rightlim)
+            leftlim, rightlim = rightlim, rightlim + pi/L
+
+            #assert ( (i-1)*pi/L <= lambda_n <= i*pi/L ), 'Lambda out of sequence'
+            An = -4*h/(2*L*h*lambda_n**2 + h*lambda_n*sin(2*L*lambda_n))
+            result += where(t==0, 0,
+                            An*alpha**2*lambda_n**3*exp(-alpha*lambda_n**2*t)*sin(lambda_n*L))
 
         return result*gain
 
     def label(self):
-        return r'Convective $\alpha=%3.2f$ mm$^2$/s, $h=%3.2f$ W/(m2.K)'  % (self.parameters[0]*1e6, self.parameters[1])
+        return r'Conv $\alpha=%3.1f$ mm$^2$/s, $h=%3.1f$ W/(m2.K)'  % (self.parameters[0]*1e6, self.parameters[1])
 
 
 if __name__ == "__main__":
@@ -114,10 +116,6 @@ if __name__ == "__main__":
         r = fit.responsedata.fromlvm(f, int(experiment['Stride']))
 
         print f
-        L = float(experiment['Length/mm'])
-        alpha0, k0, rho0, Cp0 = map(float, (material[k] for k in
-                                           ['alpha', 'k', 'rho', 'Cp']))
-        alpha0 *= 1e-6
 
         print "Material:"
         print material
@@ -125,15 +123,19 @@ if __name__ == "__main__":
 
         # Do the fits - we can easily add other data ranges here.
         models  = [[analytic_zero(r, experiment, material), 'green'],
-                   [analytic_convec(r, experiment, material, h=500), 'red']] 
+                   [analytic_convec(r, experiment, material, h=930.0), 'red']]
 
-        #plt.plot(r.t, r.y, color='blue', alpha=0.3, label='Data')
+        plt.plot(r.t, r.y/max(r.y), color='blue', alpha=0.3, label='Data')
+
+        print trapz(r.y, r.t)
+        print trapz(r.u, r.y)
 
         for model, color in models:
             model.fit()
-
-#             plt.plot(r.t, model.predictedresponse(),
-#                      color=color, label=model.label())
+            predicted = model.predictedresponse()
+            print "Peak ratio:", max(predicted)/max(r.y)
+            plt.plot(r.t, predicted/max(predicted),
+                     color=color, label=model.label())
             plt.plot(r.t, model.fluxkernel(model.parameters))
 
 
