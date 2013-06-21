@@ -273,6 +273,8 @@ def compare(data, sys, fft):
         plt.plot(t, cumtrapz(y, initialvalue=0))
 
 class db(object):
+    """ Generic "database" from CSV, builds a dict indexed with a key field """
+    # TODO: This should probably be replaced by a pandas DataFrame
     def __init__(self, filename, keyfield):
         self.index = {}
         if hasattr(filename, 'name'):
