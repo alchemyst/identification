@@ -72,8 +72,6 @@ class responsedata:
 
     def __init__(self, t, u, y, name=None, stride=1):
         # Some error checking for the unwary
-        assert numpy.linalg.norm(numpy.diff(t, 2)) < 1e-9, \
-               "Sampling period must be constant"
         assert t.size == u.size and t.size == y.size, \
                "Input vectors must all be the same size"
 
@@ -189,6 +187,9 @@ class fft:
     """ class for handling the frequency response based on FFT """
     def __init__(self, data, w_cutoff, deriv=False):
         """ Note this is not the optimal way to calculate an approximate transfer function frequency response """
+
+        assert numpy.linalg.norm(numpy.diff(data.t, 2)) < 1e-9, \
+               "Sampling period must be constant"
 
         self.data = data
         self.w_cutoff = w_cutoff
