@@ -44,7 +44,7 @@ class heatmodel(object):
         return linalg.norm(deviation[self.startindex:self.endindex])
 
     def fit(self):
-        self.parameters = self.startparameters #scipy.optimize.minimize(self.fiterror, self.startparameters)
+        self.parameters = self.startparameters # scipy.optimize.minimize(self.fiterror, self.startparameters, options={'disp': True})
 
 
 class analytic_zero(heatmodel):
@@ -83,6 +83,7 @@ class analytic_convec(heatmodel):
 
     def fluxkernel(self, parameters):
         Nterms = 1000
+        #print parameters
         alpha, h, gain = parameters
         k = self.k
         L = self.L
@@ -104,7 +105,6 @@ class analytic_convec(heatmodel):
             An = -4/(2*L*lambda_n**2 + lambda_n*sin(2*L*lambda_n))
             result += where(t==0, 0,
                             An*alpha**2*lambda_n**3*exp(-alpha*lambda_n**2*t)*sin(lambda_n*L))
-
         return result*gain
 
     def label(self):
@@ -129,20 +129,24 @@ if __name__ == "__main__":
         print material
 
         # Do the fits - we can easily add other data ranges here.
-        models  = [[analytic_zero(response, experiment, material), 'green'],
-                   [analytic_convec(response, experiment, material, h=930.0), 'red']]
+        models  = [#[analytic_zero(response, experiment, material), 'green'],
+                   [analytic_convec(response, experiment, material, h=float(experiment['h'])), 'red']]
 
         plt.plot(response.t, normalize(response.y), color='blue', alpha=0.3, label='Data')
 
         for model, color in models:
             model.fit()
             predicted = model.predictedresponse()
+            print "Input area:", response.inputarea
+            print "Output area:", response.outputarea
             print "Peak ratio:", max(predicted)/max(response.y)
             plt.plot(response.t, normalize(predicted),
                      color=color, label=model.label())
 
+        plt.ylabel('Normalized flux')
+        plt.xlabel('Time / s')
         plt.legend(loc='best')
         plt.title(response.name)
-        #plt.savefig(f + '_heatkernel.png')
-        plt.show()
+        plt.savefig(f + '_heatkernel.png')
+        #plt.show()
         plt.cla()

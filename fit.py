@@ -75,6 +75,7 @@ class responsedata:
         assert t.size == u.size and t.size == y.size, \
                "Input vectors must all be the same size"
 
+
         # sampling period: first time step
         self.T = t[stride]
 
