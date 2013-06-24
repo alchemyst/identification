@@ -32,29 +32,42 @@ class heatmodel(object):
         self.L = float(experiment['Length/mm'])*1e-3
         self.k = float(material['k'])
 
+    def scale(self, parameters):
+        return parameters/self.scalefactors
+
+    def unscale(self, scaledparameters):
+        return scaledparameters*self.scalefactors
+        
     def predictedresponse(self, parameters=None):
         if parameters is None: parameters = self.parameters
 
         kernel = self.fluxkernel(parameters)
         return convolve(-self.response.u/self.k, kernel)[:self.response.t.size]
 
-    def fiterror(self, parameters):
-        predictedy = self.predictedresponse(parameters)
+    def fiterror(self, scaledparameters):
+        predictedy = self.predictedresponse(self.unscale(scaledparameters))
         deviation = self.response.y - predictedy
         return linalg.norm(deviation[self.startindex:self.endindex])
 
     def fit(self):
-        self.parameters = self.startparameters # scipy.optimize.minimize(self.fiterror, self.startparameters, options={'disp': True})
+        if False:
+            self.parameters = self.startparameters
+        else:
+            scaledparameters = scipy.optimize.minimize(self.fiterror, self.scale(self.startparameters), options={'disp': True})
+            self.parameters = self.unscale(scaledparameters)
 
 
 class analytic_zero(heatmodel):
     """ Analytic flux kernel - zero boundary conditions"""
     def __init__(self, response, experiment, material, cutter=alldata):
         super(analytic_zero, self).__init__(response, experiment, material, cutter=cutter)
-        self.startparameters = [float(material['alpha']), 1]
-
+        self.startparameters = array([float(material['alpha']), 1e6])
+        self.scalefactors = array([1e-6, 1e6])
+        
     def fluxkernel(self, parameters):
         Nterms = 100
+        epsilon = 1e-10
+        
         alpha, gain = parameters
 
         t = self.response.t
@@ -65,8 +78,11 @@ class analytic_zero(heatmodel):
         for n in range(1, Nterms):
             lambda_n = (2*n-1)*pi/(2*L)
             #An = -(2./L)/lambda_n**2
-            result -= where(t==0, 0,
-                            2*alpha**2*lambda_n*exp(-alpha*lambda_n**2*t)*sgn/L)
+            term = where(t==0, 0,
+                         2*alpha**2*lambda_n*exp(-alpha*lambda_n**2*t)*sgn/L)
+            if max(abs(term)) < epsilon: 
+                break
+            result -= term
             sgn *= -1
         return result*gain
 
@@ -78,12 +94,15 @@ class analytic_convec(heatmodel):
 
     def __init__(self, response, experiment, material, h, cutter=alldata):
         super(analytic_convec, self).__init__(response, experiment, material, cutter=cutter)
-        self.startparameters = [float(material['alpha']), h, 1]
+        self.startparameters = array([float(material['alpha']), h, 1e6])
+        self.scalefactors = array([1e-6, 1e3, 1e6])
         self.k = float(material['k'])
 
     def fluxkernel(self, parameters):
-        Nterms = 1000
-        #print parameters
+        Nterms = 100
+        epsilon = 1e-10
+
+        print parameters
         alpha, h, gain = parameters
         k = self.k
         L = self.L
@@ -101,10 +120,14 @@ class analytic_convec(heatmodel):
             lambda_n = scipy.optimize.ridder(lambda_eq, leftlim, rightlim)
             leftlim, rightlim = rightlim, rightlim + pi/L
 
-            #assert ( (i-1)*pi/L <= lambda_n <= i*pi/L ), 'Lambda out of sequence'
+            assert ( (i-1)*pi/L <= lambda_n <= i*pi/L ), 'Lambda out of sequence'
             An = -4/(2*L*lambda_n**2 + lambda_n*sin(2*L*lambda_n))
-            result += where(t==0, 0,
-                            An*alpha**2*lambda_n**3*exp(-alpha*lambda_n**2*t)*sin(lambda_n*L))
+            term = where(t==0, 0,
+                         An*alpha**2*lambda_n**3*exp(-alpha*lambda_n**2*t)*sin(lambda_n*L))
+            if max(abs(term)) < epsilon:
+                break
+            result += term
+        print i
         return result*gain
 
     def label(self):
@@ -118,7 +141,7 @@ def loadfile(f):
     return experiment, material, response
 
 def normalize(signal):
-    return signal/max(signal)
+    return signal#/max(signal)
 
 if __name__ == "__main__":
     for f in sys.argv[1:]:
@@ -147,6 +170,6 @@ if __name__ == "__main__":
         plt.xlabel('Time / s')
         plt.legend(loc='best')
         plt.title(response.name)
-        plt.savefig(f + '_heatkernel.png')
-        #plt.show()
+        #plt.savefig(f + '_heatkernel.png')
+        plt.show()
         plt.cla()
