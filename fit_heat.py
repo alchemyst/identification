@@ -26,11 +26,12 @@ def leadingedge(cutoff):
 
 class heatmodel(object):
     """ Generic heat model class, based on fitting an experiment """
-    def __init__(self, response, experiment, material, cutter=alldata):
+    def __init__(self, response, experiment, material, dofit=False, cutter=alldata):
         self.response = response
         self.cutname, self.startindex, self.endindex = cutter(response)
         self.L = float(experiment['Length/mm'])*1e-3
         self.k = float(material['k'])
+        self.dofit = dofit
 
     def scale(self, parameters):
         return parameters/self.scalefactors
@@ -50,19 +51,24 @@ class heatmodel(object):
         return linalg.norm(deviation[self.startindex:self.endindex])
 
     def fit(self):
-        if False:
-            self.parameters = self.startparameters
+        if self.dofit:
+            result = scipy.optimize.minimize(self.fiterror, self.scale(self.startparameters), options={'disp': True})
+            self.parameters = self.unscale(result.x)
         else:
-            scaledparameters = scipy.optimize.minimize(self.fiterror, self.scale(self.startparameters), options={'disp': True})
-            self.parameters = self.unscale(scaledparameters)
+            self.parameters = self.startparameters
+
+    def report(self):
+        for n, v in zip(self.parameternames, self.parameters):
+            print "{}: {}".format(n, v)
 
 
 class analytic_zero(heatmodel):
     """ Analytic flux kernel - zero boundary conditions"""
-    def __init__(self, response, experiment, material, cutter=alldata):
-        super(analytic_zero, self).__init__(response, experiment, material, cutter=cutter)
+    def __init__(self, response, experiment, material, dofit=False, cutter=alldata):
+        super(analytic_zero, self).__init__(response, experiment, material, dofit=dofit, cutter=cutter)
         self.startparameters = array([float(material['alpha']), 1e6])
         self.scalefactors = array([1e-6, 1e6])
+        self.parameternames = ['alpha', 'gain']
         
     def fluxkernel(self, parameters):
         Nterms = 100
@@ -92,17 +98,18 @@ class analytic_zero(heatmodel):
 
 class analytic_convec(heatmodel):
 
-    def __init__(self, response, experiment, material, h, cutter=alldata):
-        super(analytic_convec, self).__init__(response, experiment, material, cutter=cutter)
-        self.startparameters = array([float(material['alpha']), h, 1e6])
+    def __init__(self, response, experiment, material, h, dofit=False, cutter=alldata):
+        super(analytic_convec, self).__init__(response, experiment, material, dofit=dofit, cutter=cutter)
+        self.startparameters = array([float(material['alpha']), h, .67e6])
         self.scalefactors = array([1e-6, 1e3, 1e6])
+        self.parameternames = ['alpha', 'h', 'gain']
         self.k = float(material['k'])
+
 
     def fluxkernel(self, parameters):
         Nterms = 100
         epsilon = 1e-10
 
-        print parameters
         alpha, h, gain = parameters
         k = self.k
         L = self.L
@@ -127,7 +134,7 @@ class analytic_convec(heatmodel):
             if max(abs(term)) < epsilon:
                 break
             result += term
-        print i
+
         return result*gain
 
     def label(self):
@@ -141,7 +148,7 @@ def loadfile(f):
     return experiment, material, response
 
 def normalize(signal):
-    return signal#/max(signal)
+    return signal/max(signal)
 
 if __name__ == "__main__":
     for f in sys.argv[1:]:
@@ -152,13 +159,17 @@ if __name__ == "__main__":
         print material
 
         # Do the fits - we can easily add other data ranges here.
-        models  = [#[analytic_zero(response, experiment, material), 'green'],
-                   [analytic_convec(response, experiment, material, h=float(experiment['h'])), 'red']]
+        models  = [[analytic_zero(response, experiment, material), 'green'],
+        #[analytic_zero(response, experiment, material, dofit=True), 'yellow'],
+                   [analytic_convec(response, experiment, material, h=float(experiment['h'])), 'magenta'],
+                   [analytic_convec(response, experiment, material, h=float(experiment['h']), dofit=True), 'red'],
+                   ]
 
         plt.plot(response.t, normalize(response.y), color='blue', alpha=0.3, label='Data')
 
         for model, color in models:
             model.fit()
+            model.report()
             predicted = model.predictedresponse()
             print "Input area:", response.inputarea
             print "Output area:", response.outputarea
