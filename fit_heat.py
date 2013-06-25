@@ -43,7 +43,7 @@ class heatmodel(object):
         if parameters is None: parameters = self.parameters
 
         kernel = self.fluxkernel(parameters)
-        return convolve(-self.response.u/self.k, kernel)[:self.response.t.size]
+        return convolve(-self.response.u, kernel)[:self.response.t.size]
 
     def fiterror(self, scaledparameters):
         predictedy = self.predictedresponse(self.unscale(scaledparameters))
@@ -66,8 +66,8 @@ class analytic_zero(heatmodel):
     """ Analytic flux kernel - zero boundary conditions"""
     def __init__(self, response, experiment, material, dofit=False, cutter=alldata):
         super(analytic_zero, self).__init__(response, experiment, material, dofit=dofit, cutter=cutter)
-        self.startparameters = array([float(material['alpha']), 1e6])
-        self.scalefactors = array([1e-6, 1e6])
+        self.startparameters = array([float(material['alpha']), 1])
+        self.scalefactors = array([1e-6, 1])
         self.parameternames = ['alpha', 'gain']
         
     def fluxkernel(self, parameters):
@@ -85,7 +85,7 @@ class analytic_zero(heatmodel):
             lambda_n = (2*n-1)*pi/(2*L)
             #An = -(2./L)/lambda_n**2
             term = where(t==0, 0,
-                         2*alpha**2*lambda_n*exp(-alpha*lambda_n**2*t)*sgn/L)
+                         2*alpha*lambda_n*exp(-alpha*lambda_n**2*t)*sgn/L)
             if max(abs(term)) < epsilon: 
                 break
             result -= term
@@ -100,8 +100,8 @@ class analytic_convec(heatmodel):
 
     def __init__(self, response, experiment, material, h, dofit=False, cutter=alldata):
         super(analytic_convec, self).__init__(response, experiment, material, dofit=dofit, cutter=cutter)
-        self.startparameters = array([float(material['alpha']), h, .67e6])
-        self.scalefactors = array([1e-6, 1e3, 1e6])
+        self.startparameters = array([float(material['alpha']), h, 1])
+        self.scalefactors = array([1e-6, 1e3, 1])
         self.parameternames = ['alpha', 'h', 'gain']
         self.k = float(material['k'])
 
@@ -130,7 +130,7 @@ class analytic_convec(heatmodel):
             assert ( (i-1)*pi/L <= lambda_n <= i*pi/L ), 'Lambda out of sequence'
             An = -4/(2*L*lambda_n**2 + lambda_n*sin(2*L*lambda_n))
             term = where(t==0, 0,
-                         An*alpha**2*lambda_n**3*exp(-alpha*lambda_n**2*t)*sin(lambda_n*L))
+                         An*alpha*lambda_n**3*exp(-alpha*lambda_n**2*t)*sin(lambda_n*L))
             if max(abs(term)) < epsilon:
                 break
             result += term
@@ -162,22 +162,25 @@ if __name__ == "__main__":
         models  = [[analytic_zero(response, experiment, material), 'green'],
         #[analytic_zero(response, experiment, material, dofit=True), 'yellow'],
                    [analytic_convec(response, experiment, material, h=float(experiment['h'])), 'magenta'],
-                   [analytic_convec(response, experiment, material, h=float(experiment['h']), dofit=True), 'red'],
+        #[analytic_convec(response, experiment, material, h=float(experiment['h']), dofit=True), 'red'],
                    ]
 
-        plt.plot(response.t, normalize(response.y), color='blue', alpha=0.3, label='Data')
+        plt.plot(response.t, response.y, color='blue', alpha=0.3, label='Data')
 
         for model, color in models:
             model.fit()
             model.report()
             predicted = model.predictedresponse()
+            gain = response.inputarea/response.outputarea
             print "Input area:", response.inputarea
             print "Output area:", response.outputarea
-            print "Peak ratio:", max(predicted)/max(response.y)
-            plt.plot(response.t, normalize(predicted),
+            print "Gain:", gain
+            print "Kernel area:", trapz(-model.fluxkernel(model.parameters), response.t)
+            print "Predicted area:", trapz(predicted, response.t)
+            plt.plot(response.t, predicted*gain,
                      color=color, label=model.label())
 
-        plt.ylabel('Normalized flux')
+        plt.ylabel('Heat flux')
         plt.xlabel('Time / s')
         plt.legend(loc='best')
         plt.title(response.name)
