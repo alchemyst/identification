@@ -175,6 +175,9 @@ if __name__ == "__main__":
                    [analytic_convec(response, experiment, material, h=float(experiment['h']), dofit=True), 'red'],
                    ]
 
+        valueaxis = plt.subplot(2, 1, 1)
+        valueaxis.set_xticklabels(())
+        plt.subplots_adjust(hspace=0.001)
         plt.plot(response.t, response.y, color='blue', alpha=0.3, label='Data')
 
         for model, color in models:
@@ -185,13 +188,21 @@ if __name__ == "__main__":
             print "Kernel area:", trapz(-model.fluxkernel(model.parameters), response.t)
             print "Predicted area:", trapz(predicted, response.t)
             model.report()
+            plt.subplot(2, 1, 1)
             plt.plot(response.t, predicted,
                      color=color, label=model.label())
+            plt.subplot(2, 1, 2)
+            plt.plot(response.t, response.y - predicted,
+                     color=color, label=model.label())
 
+        plt.subplot(2, 1, 1)
         plt.ylabel('Heat flux')
-        plt.xlabel('Time / s')
         plt.legend(loc='best')
         plt.title(response.name)
+        plt.subplot(2, 1, 2)
+        plt.ylabel('Residual (actual - predicted)')        
+        plt.xlabel('Time / s')
+
         plt.savefig(f + '_heatkernel.png')
         #plt.show()
-        plt.cla()
+        plt.clf()
