@@ -26,7 +26,7 @@ def leadingedge(cutoff):
 
 class heatmodel(object):
     """ Generic heat model class, based on fitting an experiment """
-    def __init__(self, response, experiment, material, dofit=False, cutter=alldata):
+    def __init__(self, response, experiment, material, dofit=None, cutter=alldata):
         self.response = response
         self.cutname, self.startindex, self.endindex = cutter(response)
         self.L = float(experiment['Length/mm'])*1e-3
@@ -47,40 +47,51 @@ class heatmodel(object):
         # TODO: Figure out why this convolution has to be adjusted with the sampling time!
         return convolve(-self.response.u, kernel)[:self.response.t.size]*self.response.t[1]*self.gain
 
-    def fiterror(self, scaledparameters):
-        parameters = self.unscale(scaledparameters)
+    def fiterror(self, parameters):
         predictedy = self.predictedresponse(parameters)
         deviation = self.response.y - predictedy
         return linalg.norm(deviation[self.startindex:self.endindex])
 
     def fit(self):
-        if self.dofit:
-            result = scipy.optimize.minimize(self.fiterror, self.scale(self.startparameters), options={'disp': True})
-            self.parameters = self.unscale(result.x)
-        else:
+        if self.dofit is None:
             self.parameters = self.startparameters
+        else:
+            fitindexes = [self.parameternames.index(name) for name in self.dofit]
+            scaledparameters = self.scale(self.startparameters)
+
+            def fitfunction(scaledchangingparameters):
+                scaledparameters[fitindexes] = scaledchangingparameters
+                return self.fiterror(self.unscale(scaledparameters))
+
+            starting_scaled_changingparameters = scaledparameters[fitindexes]
+            result = scipy.optimize.minimize(fitfunction, starting_scaled_changingparameters, options={'disp': True})
+
+            scaledparameters[fitindexes] = result.x
+            self.parameters = self.unscale(scaledparameters)
 
     def report(self):
+        print "Model parameters:"
         for n, v in zip(self.parameternames, self.parameters):
-            print "{}: {}".format(n, v)
+            fixedorfitted = "fitted" if (self.dofit and n in self.dofit) else "fixed"
+            print " {}: {} ({})".format(n, v, fixedorfitted)
         print "Experiment gain:", self.gain
 
 
 class analytic_zero(heatmodel):
     """ Analytic flux kernel - zero boundary conditions"""
-    def __init__(self, response, experiment, material, dofit=False, cutter=alldata):
+    def __init__(self, response, experiment, material, dofit=None, cutter=alldata):
         super(analytic_zero, self).__init__(response, experiment, material, dofit=dofit, cutter=cutter)
         self.startparameters = array([float(material['alpha'])])
         self.scalefactors = array([1e-6])
         self.parameternames = ['alpha']
-        
+
     def fluxkernel(self, parameters=None):
         if parameters is None:
             parameters = self.parameters
 
         Nterms = 100
         epsilon = 1e-12
-        
+
         alpha = parameters
 
         t = self.response.t
@@ -105,7 +116,7 @@ class analytic_zero(heatmodel):
 
 class analytic_convec(heatmodel):
 
-    def __init__(self, response, experiment, material, h, dofit=False, cutter=alldata):
+    def __init__(self, response, experiment, material, h, dofit=None, cutter=alldata):
         super(analytic_convec, self).__init__(response, experiment, material, dofit=dofit, cutter=cutter)
         self.startparameters = array([float(material['alpha']), h])
         self.scalefactors = array([1e-6, 1e3])
@@ -148,7 +159,7 @@ class analytic_convec(heatmodel):
         return result
 
     def label(self):
-        return r'Conv $\alpha=%3.1f$ mm$^2$/s, $h=%3.1f$ W/(m2.K)'  % (self.parameters[0]*1e6, self.parameters[1])
+        return r'Conv $\alpha=%3.1f\,\mathrm{mm}^2/\mathrm{s}, h=%3.1f\,\mathrm{W}/(\mathrm{m}^2\cdot \mathrm{K})$'  % (self.parameters[0]*1e6, self.parameters[1])
 
 def loadfile(f):
     experiment = experiments.index[os.path.basename(f)]
@@ -172,7 +183,7 @@ if __name__ == "__main__":
         models  = [#[analytic_zero(response, experiment, material), 'green'],
         #[analytic_zero(response, experiment, material, dofit=True), 'yellow'],
                    [analytic_convec(response, experiment, material, h=float(experiment['h'])), 'green'],
-                   [analytic_convec(response, experiment, material, h=float(experiment['h']), dofit=True), 'red'],
+                   [analytic_convec(response, experiment, material, h=float(experiment['h']), dofit=['alpha']), 'red'],
                    ]
 
         valueaxis = plt.subplot(2, 1, 1)
@@ -196,11 +207,11 @@ if __name__ == "__main__":
                      color=color, label=model.label())
 
         plt.subplot(2, 1, 1)
-        plt.ylabel('Heat flux')
+        plt.ylabel('Heat flux / $(W/m^2)$')
         plt.legend(loc='best')
         plt.title(response.name)
         plt.subplot(2, 1, 2)
-        plt.ylabel('Residual (actual - predicted)')        
+        plt.ylabel('Residual (actual - predicted)') 
         plt.xlabel('Time / s')
 
         plt.savefig(f + '_heatkernel.png')
