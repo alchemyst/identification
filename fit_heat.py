@@ -8,6 +8,7 @@ import csv
 import sys
 import os.path
 import scipy.optimize
+import scipy.integrate
 from functools import partial
 
 experiments = fit.experimentdb(os.path.expanduser('~/Dropbox/Raw/experiments.csv'))
@@ -61,7 +62,12 @@ class heatmodel(object):
 
             def fitfunction(scaledchangingparameters):
                 scaledparameters[fitindexes] = scaledchangingparameters
-                return self.fiterror(self.unscale(scaledparameters))
+                # FIXME: Overly simplistic constraint handling here.
+                # penalize negative values
+                if any(scaledparameters < 0):
+                    return 100*linalg.norm(scaledparameters[scaledparameters<0])
+                else:
+                    return self.fiterror(self.unscale(scaledparameters))
 
             starting_scaled_changingparameters = scaledparameters[fitindexes]
             result = scipy.optimize.minimize(fitfunction, starting_scaled_changingparameters, options={'disp': True})
@@ -161,17 +167,39 @@ class analytic_convec(heatmodel):
     def label(self):
         return r'Conv $\alpha=%3.1f\,\mathrm{mm}^2/\mathrm{s}, h=%3.1f\,\mathrm{W}/(\mathrm{m}^2\cdot \mathrm{K})$'  % (self.parameters[0]*1e6, self.parameters[1])
 
+
 def loadfile(f):
     experiment = experiments.index[os.path.basename(f)]
     material = materials.index[experiment['Material']]
     response = fit.responsedata.fromlvm(f, int(experiment['Stride']))
-    
+
     return experiment, material, response
+
 
 def normalize(signal):
     return signal/max(signal)
 
+
+def spacedmarks(x, y, Nmarks, data_ratio=None):
+    if data_ratio is None:
+        data_ratio = plt.gca().get_data_ratio()
+
+    dydx = gradient(y, x[1])
+    dxdx = gradient(x, x[1])*data_ratio
+
+    arclength = scipy.integrate.cumtrapz(sqrt(dydx**2 + dxdx**2), x, initial=0)
+
+    marks = linspace(0, max(arclength), Nmarks)
+    markx = interp(marks, arclength, x)
+    marky = interp(markx, x, y)
+
+    return markx, marky
+
+
 if __name__ == "__main__":
+    materialplots = {}
+    counter = 1
+    dirname = os.path.expanduser('~/Dropbox/Raw')
     for f in sys.argv[1:]:
         print f
         experiment, material, response = loadfile(f)
@@ -179,19 +207,35 @@ if __name__ == "__main__":
         print "Material:"
         print material
 
+        materialname = material['Material']
+        if materialname not in materialplots:
+            materialplots[materialname] = counter
+            counter +=1 
+
+        mfig = materialplots[materialname]
+
         # Do the fits - we can easily add other data ranges here.
         models  = [#[analytic_zero(response, experiment, material), 'green'],
         #[analytic_zero(response, experiment, material, dofit=True), 'yellow'],
-                   [analytic_convec(response, experiment, material, h=float(experiment['h'])), 'green'],
-                   [analytic_convec(response, experiment, material, h=float(experiment['h']), dofit=['alpha']), 'red'],
+                   [analytic_convec(response, experiment, material, h=float(experiment['h'])), 'green', True],
+                   [analytic_convec(response, experiment, material, h=float(experiment['h']), dofit=['alpha']), 'red', False],
                    ]
 
+
+        plotnumber = materialplots[materialname]
+        plt.figure(plotnumber)
+        plt.plot(response.t, response.y, label=experiment['Length/mm'] + ' mm')
+
+        cfig = plt.figure(0)
         valueaxis = plt.subplot(2, 1, 1)
         valueaxis.set_xticklabels(())
         plt.subplots_adjust(hspace=0.001)
-        plt.plot(response.t, response.y, color='blue', alpha=0.3, label='Data')
+        plt.plot(response.t, response.y, color='blue', label='Data')
+        markt, marky = spacedmarks(response.t, response.y, 30)
+        plt.scatter(markt, marky, color='blue', s=10)
+        plt.xlim(xmin=0)
 
-        for model, color in models:
+        for model, color, overallplot in models:
             model.fit()
             predicted = model.predictedresponse()
             print "Input area:", response.inputarea
@@ -199,12 +243,17 @@ if __name__ == "__main__":
             print "Kernel area:", trapz(-model.fluxkernel(model.parameters), response.t)
             print "Predicted area:", trapz(predicted, response.t)
             model.report()
+            if overallplot:
+                plt.figure(plotnumber)
+                plt.plot(response.t, predicted, label=model.label())
+            plt.figure(0)
             plt.subplot(2, 1, 1)
             plt.plot(response.t, predicted,
                      color=color, label=model.label())
             plt.subplot(2, 1, 2)
             plt.plot(response.t, response.y - predicted,
                      color=color, label=model.label())
+            
 
         plt.subplot(2, 1, 1)
         plt.ylabel('Heat flux / $(W/m^2)$')
@@ -217,3 +266,9 @@ if __name__ == "__main__":
         plt.savefig(f + '_heatkernel.png')
         #plt.show()
         plt.clf()
+        
+    for materialname, plotnumber in materialplots.iteritems():
+        plt.figure(plotnumber)
+        plt.legend()
+        plt.title(materialname)
+        plt.savefig(os.path.join(dirname, materialname + '.png'))
