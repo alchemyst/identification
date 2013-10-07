@@ -12,7 +12,7 @@ import scipy.integrate
 from functools import partial
 
 experiments = fit.experimentdb(os.path.expanduser('~/Dropbox/Raw/experiments.csv'))
-materials = fit.materialdb(os.path.expanduser('~/Dropbox/Raw/material.csv'))    
+materials = fit.materialdb(os.path.expanduser('~/Dropbox/Raw/material.csv'))
 
 
 def alldata(response):
@@ -40,7 +40,7 @@ class heatmodel(object):
 
     def unscale(self, scaledparameters):
         return scaledparameters*self.scalefactors
-        
+
     def predictedresponse(self, parameters=None):
         if parameters is None: parameters = self.parameters
 
@@ -62,15 +62,13 @@ class heatmodel(object):
 
             def fitfunction(scaledchangingparameters):
                 scaledparameters[fitindexes] = scaledchangingparameters
-                # FIXME: Overly simplistic constraint handling here.
-                # penalize negative values
-                if any(scaledparameters < 0):
-                    return 100*linalg.norm(scaledparameters[scaledparameters<0])
-                else:
-                    return self.fiterror(self.unscale(scaledparameters))
+                return self.fiterror(self.unscale(scaledparameters))
 
             starting_scaled_changingparameters = scaledparameters[fitindexes]
-            result = scipy.optimize.minimize(fitfunction, starting_scaled_changingparameters, options={'disp': True})
+            result = scipy.optimize.minimize(fitfunction, starting_scaled_changingparameters, 
+                                             bounds=[(0.01, None) for i in fitindexes],
+                                             options={'disp': True},
+                                             method='L-BFGS-B')
 
             scaledparameters[fitindexes] = result.x
             self.parameters = self.unscale(scaledparameters)
@@ -110,7 +108,7 @@ class analytic_zero(heatmodel):
             #An = -(2./L)/lambda_n**2
             term = where(t==0, 0,
                          2*alpha*lambda_n*exp(-alpha*lambda_n**2*t)*sgn/L)
-            if max(abs(term)) < epsilon: 
+            if max(abs(term)) < epsilon:
                 break
             result -= term
             sgn *= -1
@@ -136,12 +134,14 @@ class analytic_convec(heatmodel):
 
         if parameters is None:
             parameters = self.parameters
-            
+
         alpha, h = parameters
         k = self.k
         L = self.L
         t = self.response.t
 
+        assert (alpha > 0) and (h > 0) and (k > 0) and (L > 0)
+        
         def lambda_eq(lam):
             return sin(lam*L) - h/k*cos(lam*L)/lam
 
@@ -152,6 +152,7 @@ class analytic_convec(heatmodel):
 
         for i in range(1, Nterms):
             lambda_n = scipy.optimize.ridder(lambda_eq, leftlim, rightlim)
+            
             leftlim, rightlim = rightlim, rightlim + pi/L
 
             assert ( (i-1)*pi/L <= lambda_n <= i*pi/L ), 'Lambda out of sequence'
@@ -210,13 +211,14 @@ if __name__ == "__main__":
         materialname = material['Material']
         if materialname not in materialplots:
             materialplots[materialname] = counter
-            counter +=1 
+            counter +=1
 
         mfig = materialplots[materialname]
 
         # Do the fits - we can easily add other data ranges here.
         models  = [#[analytic_zero(response, experiment, material), 'green'],
         #[analytic_zero(response, experiment, material, dofit=True), 'yellow'],
+                   [analytic_convec(response, experiment, material, h=float(experiment['h']), dofit=['h']), 'magenta', False],
                    [analytic_convec(response, experiment, material, h=float(experiment['h'])), 'green', True],
                    [analytic_convec(response, experiment, material, h=float(experiment['h']), dofit=['alpha']), 'red', False],
                    ]
@@ -253,20 +255,20 @@ if __name__ == "__main__":
             plt.subplot(2, 1, 2)
             plt.plot(response.t, response.y - predicted,
                      color=color, label=model.label())
-            
+
 
         plt.subplot(2, 1, 1)
         plt.ylabel('Heat flux / $(W/m^2)$')
         plt.legend(loc='best')
         plt.title(response.name)
         plt.subplot(2, 1, 2)
-        plt.ylabel('Residual (actual - predicted)') 
+        plt.ylabel('Residual (actual - predicted)')
         plt.xlabel('Time / s')
 
         plt.savefig(f + '_heatkernel.png')
         #plt.show()
         plt.clf()
-        
+
     for materialname, plotnumber in materialplots.iteritems():
         plt.figure(plotnumber)
         plt.legend()
