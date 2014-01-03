@@ -140,7 +140,7 @@ class analytic_convec(heatmodel):
         L = self.L
         t = self.response.t
 
-        assert (alpha > 0) and (h > 0) and (k > 0) and (L > 0)
+        assert (alpha > 0) and (h > 0) and (k > 0) and (L > 0), "All parameters must be positive"
         
         def lambda_eq(lam):
             return sin(lam*L) - h/k*cos(lam*L)/lam
