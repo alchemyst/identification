@@ -14,7 +14,6 @@ from functools import partial
 experiments = fit.experimentdb(os.path.expanduser('~/Dropbox/Raw/experiments.csv'))
 materials = fit.materialdb(os.path.expanduser('~/Dropbox/Raw/material.csv'))
 
-
 def alldata(response):
     return 'All data', 0, len(response.t)+1
 
