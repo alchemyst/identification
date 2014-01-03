@@ -291,7 +291,6 @@ class db(object):
 class experimentdb(db):
     def __init__(self, filename):
         super(experimentdb, self).__init__(filename, 'Filename')
-        self.experiments = self.index
 
 class materialdb(db):
     def __init__(self, filename):
@@ -328,17 +327,17 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.experimentfile:
-        db = experimentdb(args.experimentfile)
+        experiments = experimentdb(args.experimentfile)
         outfile = csv.DictWriter(open(args.experimentfile.name + "out.csv", 'w'),
-                                 db.itemreader.fieldnames)
+                                 experiments.itemreader.fieldnames)
         outfile.writeheader()
 
     for f in args.datafiles:
         # TODO: Replace this output with logging
         print f.name 
         b = os.path.basename(f.name)
-        if b in db.experiments:
-            experiment = db.experiments[b]
+        if b in experiments.index:
+            experiment = experiments.index[b]
             args.stride=int(experiment['Stride'])
             
             if experiment['Start time']:
