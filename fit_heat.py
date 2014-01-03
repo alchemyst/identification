@@ -203,7 +203,9 @@ if __name__ == "__main__":
     dirname = os.path.expanduser('~/Dropbox/Raw')
     for f in sys.argv[1:]:
         print f
-        experiment, material, response = loadfile(f)
+        fullname = dirname + "/" + f
+        os.path.normcase(fullname)
+        experiment, material, response = loadfile(fullname)
 
         print "Material:"
         print material
