@@ -200,10 +200,12 @@ def spacedmarks(x, y, Nmarks, data_ratio=None):
 if __name__ == "__main__":
     materialplots = {}
     counter = 1
-    dirname = os.path.expanduser('~/Dropbox/Raw')
+    dirname = os.path.expanduser('~/Dropbox/Raw/')
     for f in sys.argv[1:]:
         print f
-        experiment, material, response = loadfile(f)
+        newd = os.path.normcase(dirname)
+        fullname = newd + f
+        experiment, material, response = loadfile(fullname)
 
         print "Material:"
         print material
