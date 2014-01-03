@@ -9,6 +9,7 @@ import copy
 import lvm
 import csv
 import os.path
+import functools
 
 # Nomenclature:
 #
@@ -287,14 +288,8 @@ class db(object):
         for item in self.itemreader:
             self.index[item[keyfield]] = item
         
-
-class experimentdb(db):
-    def __init__(self, filename):
-        super(experimentdb, self).__init__(filename, 'Filename')
-
-class materialdb(db):
-    def __init__(self, filename):
-        super(materialdb, self).__init__(filename, 'Material')
+experimentdb = functools.partial(db, keyfield='Filename')
+materialdb = functools.partial(db, keyfield='Material')
         
 if __name__ == "__main__":
     # load data from csv file
